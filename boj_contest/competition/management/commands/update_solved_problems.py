@@ -1,6 +1,8 @@
 # competition/management/commands/update_solved_problems.py
 from django.core.management.base import BaseCommand
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from django.utils import timezone
 from competition.models import Participant, ContestProblem, Submission
 
@@ -30,13 +32,22 @@ class Command(BaseCommand):
 
         # solved.ac API 호출
         def check_solved_ac(handle, pid):
+            # 세션 설정 (재시도 로직 포함)
+            session = requests.Session()
+            retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+            adapter = HTTPAdapter(max_retries=retry)
+            session.mount('https://', adapter)
+
             url    = "https://solved.ac/api/v3/search/problem"
             params = {
                 'query': f"solved_by:{handle} id:{pid}",
                 'page': 1, 'pageSize': 1,
             }
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
             try:
-                r = requests.get(url, params=params, timeout=10)
+                r = session.get(url, params=params, headers=headers, timeout=10)
                 r.raise_for_status()
                 return r.json().get('count', 0) > 0
             except requests.RequestException:
